@@ -147,7 +147,7 @@ export function MultimodalInput({
         value={input}
         onChange={(e) => setInput(e.target.value)}
         className={cx(
-          "bg-white min-h-[72px] w-full max-h-[calc(100dvh)]",
+          "bg-white min-h-[72px] text-sm w-full max-h-[calc(100dvh)]",
           "overflow-hidden resize-none px-4 pb-10 pt-4 rounded-2xl",
           "outline-none focus:outline-none focus:ring-0 border-0"
         )}
