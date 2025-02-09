@@ -274,13 +274,11 @@ export function Chat({
     <div className="flex w-full h-full relative">
       {/* Main container with dynamic width */}
       <motion.div
-        className={`
-          mx-auto flex flex-col pt-10
-          ${hasStartedResearch ? "md:mr-0" : "md:mx-auto"}
-        `}
+        className={`mx-auto flex flex-col h-full pt-10 ${
+          hasStartedResearch ? "md:mr-0" : "md:mx-auto"
+        }`}
         initial={{ width: "100%", maxWidth: "800px" }}
         animate={{
-          // Only adjust width on larger screens; on mobile always use 100%
           width: !isMobile && hasStartedResearch ? "55%" : "100%",
           maxWidth: !isMobile && hasStartedResearch ? "1000px" : "800px",
         }}
@@ -289,18 +287,13 @@ export function Chat({
         {/* Messages Container */}
         <div
           ref={containerRef}
-          className={`
-            flex-1 overflow-y-auto
-            ${showProgress ? "hidden md:block" : "block"}
-          `}
+          className={`${
+            showProgress ? "hidden md:block" : "block"
+          } flex-1 overflow-y-auto relative`}
         >
-          {/* Show welcome message if no research and no messages */}
+          {/* Welcome Message (if no research started and no messages) */}
           {!hasStartedResearch && messages.length === 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="absolute inset-0 flex items-center justify-center"
-            >
+            <div className="absolute inset-0 flex items-center justify-center">
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -309,7 +302,7 @@ export function Chat({
                   stiffness: 100,
                   damping: 20,
                 }}
-                className="relative text-center space-y-8 p-12
+                className="relative text-center space-y-4 p-4 md:p-12
                   before:absolute before:inset-0 
                   before:bg-gradient-to-b before:from-primary/[0.03] before:to-primary/[0.01]
                   before:rounded-[32px] before:blur-xl before:-z-10
@@ -342,19 +335,15 @@ export function Chat({
                     className="absolute inset-0 bg-gradient-to-r from-primary/20 to-primary/30 
                       blur-2xl rounded-full -z-10"
                   />
-                  <BrainCircuitIcon
-                    className="w-16 h-16 mx-auto 
-                    text-primary drop-shadow-[0_0_15px_rgba(var(--primary),0.3)]"
-                  />
+                  <BrainCircuitIcon className="w-12 h-12 mx-auto text-primary drop-shadow-[0_0_15px_rgba(var(--primary),0.3)]" />
                 </motion.div>
 
-                <div className="space-y-6">
+                <div className="space-y-2">
                   <motion.h2
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: 0.2 }}
-                    className="text-2xl font-semibold 
-                      bg-clip-text text-transparent 
+                    className="text-base md:text-2xl font-semibold bg-clip-text text-transparent 
                       bg-gradient-to-r from-primary via-primary/90 to-primary/80"
                   >
                     Open Deep Research
@@ -364,8 +353,7 @@ export function Chat({
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: 0.3 }}
-                    className="text-base text-muted-foreground/80 
-                      max-w-[340px] mx-auto leading-relaxed"
+                    className="text-xs md:text-base text-muted-foreground/80 max-w-[340px] mx-auto leading-relaxed"
                   >
                     An open source alternative to OpenAI and Gemini's deep
                     research capabilities. Ask any question to generate a
@@ -382,23 +370,19 @@ export function Chat({
                       href="https://github.com/fdarkaou/open-deep-research"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center px-6 py-2.5
-                        text-sm font-medium 
-                        bg-gradient-to-r from-primary/10 to-primary/5
-                        hover:from-primary/15 hover:to-primary/10
-                        text-primary hover:text-primary/90
-                        rounded-full transition-all duration-300
-                        shadow-[0_0_0_1px_rgba(var(--primary),0.1)]
-                        hover:shadow-[0_0_0_1px_rgba(var(--primary),0.2)]
+                      className="inline-flex items-center px-2 py-1 md:px-6 md:py-2.5 text-xs md:text-sm font-medium 
+                        bg-gradient-to-r from-primary/10 to-primary/5 hover:from-primary/15 hover:to-primary/10
+                        text-primary hover:text-primary/90 rounded-full transition-all duration-300
+                        shadow-[0_0_0_1px_rgba(var(--primary),0.1)] hover:shadow-[0_0_0_1px_rgba(var(--primary),0.2)]
                         hover:scale-[1.02]"
                     >
-                      <GithubIcon className="w-4 h-4 mr-2" />
+                      <GithubIcon className="w-4 h-4 mr-1" />
                       View source code
                     </a>
                   </motion.div>
                 </div>
               </motion.div>
-            </motion.div>
+            </div>
           )}
 
           {/* Messages */}
@@ -415,7 +399,7 @@ export function Chat({
           </div>
         </div>
 
-        {/* Input - Fixed at bottom on mobile */}
+        {/* Input - Fixed to bottom */}
         <div className="sticky bottom-0">
           <div className="p-4 md:p-6 mx-auto">
             <MultimodalInput
