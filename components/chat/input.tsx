@@ -165,7 +165,7 @@ export function MultimodalInput({
           <Slider
             value={[breadth]}
             min={2}
-            max={10}
+            max={15}
             step={1}
             className="w-20"
             onValueChange={([value]) => setBreadth(value)}
@@ -177,7 +177,7 @@ export function MultimodalInput({
           <Slider
             value={[depth]}
             min={1}
-            max={5}
+            max={8}
             step={1}
             className="w-20"
             onValueChange={([value]) => setDepth(value)}
@@ -255,7 +255,7 @@ export function MultimodalInput({
             <Slider
               value={[breadth]}
               min={2}
-              max={10}
+              max={15}
               step={1}
               className="w-24"
               onValueChange={([value]) => setBreadth(value)}
@@ -269,7 +269,7 @@ export function MultimodalInput({
             <Slider
               value={[depth]}
               min={1}
-              max={5}
+              max={8}
               step={1}
               className="w-24"
               onValueChange={([value]) => setDepth(value)}

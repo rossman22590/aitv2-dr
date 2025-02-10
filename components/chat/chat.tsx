@@ -310,33 +310,40 @@ export function Chat({
                   after:bg-gradient-to-br after:from-primary/[0.08] after:via-transparent after:to-primary/[0.03]
                   after:rounded-[32px] after:blur-md after:-z-20"
               >
-                <motion.div
-                  animate={{
-                    y: [-2, 2, -2],
-                    rotate: [-1, 1, -1],
-                  }}
-                  transition={{
-                    duration: 5,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                  }}
-                  className="relative"
-                >
-                  <motion.div
-                    animate={{
-                      scale: [1, 1.05, 1],
-                      opacity: [0.8, 1, 0.8],
-                    }}
-                    transition={{
-                      duration: 3,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                    }}
-                    className="absolute inset-0 bg-gradient-to-r from-primary/20 to-primary/30 
-                      blur-2xl rounded-full -z-10"
-                  />
-                  <BrainCircuitIcon className="w-12 h-12 mx-auto text-primary drop-shadow-[0_0_15px_rgba(var(--primary),0.3)]" />
-                </motion.div>
+<motion.div
+  animate={{
+    scale: [1, 1.05, 1],
+    opacity: [0.8, 1, 0.8],
+  }}
+  transition={{
+    duration: 3,
+    repeat: Infinity,
+    ease: "easeInOut",
+  }}
+  className="relative w-24 h-24 flex items-center justify-center mx-auto" // Added flex centering and mx-auto
+>
+  <motion.div
+    animate={{
+      scale: [1, 1.05, 1],
+      opacity: [0.8, 1, 0.8],
+    }}
+    transition={{
+      duration: 3,
+      repeat: Infinity,
+      ease: "easeInOut",
+    }}
+    className="absolute inset-0 bg-gradient-to-r from-primary/20 to-primary/30 
+      blur-2xl rounded-full -z-10"
+  />
+  {/* Image replaces BrainCircuitIcon */}
+  <img
+    src="/icon.png"
+    alt="Brain Circuit"
+    className="w-16 h-16 object-contain drop-shadow-[0_0_15px_rgba(var(--primary),0.3)]" // Fixed size for better control
+  />
+</motion.div>
+
+
 
                 <div className="space-y-2">
                   <motion.h2
