@@ -8,16 +8,17 @@ export function Header() {
         <div className="container flex h-[3.5rem] items-center justify-center">
           <Link
             className="flex items-center text-md text-black"
-            href="https://anotherwrapper.com"
+            href="https://myapps.ai"
             target="_blank"
           >
-            <Image
-              src="/logo-text.png"
-              alt="Anotherwrapper Logo"
-              width={400}
-              height={100}
-              className="w-48"
-            />
+           <Image
+  src="/logo.png"
+  alt="Anotherwrapper Logo"
+  width={50}
+  height={50}
+  className="w-12 h-12"
+/>
+
           </Link>
         </div>
       </header>

@@ -6,11 +6,9 @@ import cx from "classnames";
 import { motion } from "framer-motion";
 import {
   ArrowUpIcon,
-  CheckCircleIcon,
   ChevronDown,
   DownloadIcon,
   Settings2,
-  XCircleIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -19,7 +17,6 @@ import {
   availableModels,
   type AIModelDisplayInfo,
 } from "@/lib/deep-research/ai/providers";
-import { ApiKeyDialog } from "@/components/chat/api-key-dialog";
 
 interface MultimodalInputProps {
   onSubmit: (
@@ -32,7 +29,6 @@ interface MultimodalInputProps {
   ) => void;
   isLoading: boolean;
   placeholder?: string;
-  isAuthenticated?: boolean;
   onDownload?: () => void;
   canDownload?: boolean;
 }
@@ -52,53 +48,10 @@ export function MultimodalInput({
       availableModels[0]
   );
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
-  const [showApiKeyPrompt, setShowApiKeyPrompt] = useState(false);
-  const [hasKeys, setHasKeys] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // Read the feature flag from environment variables.
-  const enableApiKeys = process.env.NEXT_PUBLIC_ENABLE_API_KEYS === "true";
-  // When API keys are disabled via env flag, always consider keys as present.
-  const effectiveHasKeys = enableApiKeys ? hasKeys : true;
-
-  // Check for keys using the consolidated endpoint
-  useEffect(() => {
-    const checkKeys = async () => {
-      const res = await fetch("/api/keys");
-      const data = await res.json();
-      setHasKeys(data.keysPresent);
-      if (!data.keysPresent && enableApiKeys) {
-        setShowApiKeyPrompt(true);
-      } else {
-        setShowApiKeyPrompt(false);
-      }
-    };
-    checkKeys();
-  }, [enableApiKeys]);
-
-  // New: Remove API keys handler
-  const handleRemoveKeys = async () => {
-    if (!window.confirm("Are you sure you want to remove your API keys?"))
-      return;
-    try {
-      const res = await fetch("/api/keys", {
-        method: "DELETE",
-      });
-      if (res.ok) {
-        setHasKeys(false);
-      }
-    } catch (error) {
-      console.error("Error removing keys:", error);
-    }
-  };
 
   const handleSubmit = () => {
     if (!input.trim() || isLoading) return;
-    if (enableApiKeys && !effectiveHasKeys) {
-      // Re-open the API key modal if keys are missing
-      setShowApiKeyPrompt(true);
-      return;
-    }
     onSubmit(input, {
       breadth,
       depth,
@@ -128,18 +81,6 @@ export function MultimodalInput({
 
   return (
     <div className="relative w-full flex flex-col gap-4 border-none">
-      {/* Conditionally render API key dialog only if enabled */}
-      {enableApiKeys && (
-        <ApiKeyDialog
-          show={showApiKeyPrompt}
-          onClose={setShowApiKeyPrompt}
-          onSuccess={() => {
-            setShowApiKeyPrompt(false);
-            setHasKeys(true);
-          }}
-        />
-      )}
-
       <textarea
         ref={textareaRef}
         placeholder={placeholder}
@@ -161,37 +102,6 @@ export function MultimodalInput({
 
       {/* Mobile Controls - Shown in a row above the input */}
       <div className="md:hidden flex flex-wrap gap-2 px-4 py-2 border-t border-border/40 bg-background/80 rounded-xl backdrop-blur-sm">
-        {/* API Keys Status */}
-        <button
-          type="button"
-          onClick={
-            enableApiKeys
-              ? effectiveHasKeys
-                ? handleRemoveKeys
-                : () => setShowApiKeyPrompt(true)
-              : undefined
-          }
-          className="flex items-center gap-1"
-        >
-          {enableApiKeys ? (
-            effectiveHasKeys ? (
-              <>
-                <CheckCircleIcon size={16} className="text-green-500" />
-                <span className="text-xs text-green-600">
-                  API keys configured
-                </span>
-              </>
-            ) : (
-              <>
-                <XCircleIcon size={16} className="text-red-500" />
-                <span className="text-xs text-red-600">API keys missing</span>
-              </>
-            )
-          ) : (
-            <span className="text-xs text-green-600">Using .env API keys</span>
-          )}
-        </button>
-
         {/* Model Selector with Dropdown */}
         <div className="relative">
           <button
@@ -280,37 +190,6 @@ export function MultimodalInput({
 
       {/* Desktop Controls - Original layout */}
       <div className="hidden md:flex absolute bottom-2.5 left-2 gap-2 items-center">
-        {/* Original desktop controls - unchanged */}
-        <button
-          type="button"
-          onClick={
-            enableApiKeys
-              ? effectiveHasKeys
-                ? handleRemoveKeys
-                : () => setShowApiKeyPrompt(true)
-              : undefined
-          }
-          className="flex items-center gap-1"
-        >
-          {enableApiKeys ? (
-            effectiveHasKeys ? (
-              <>
-                <CheckCircleIcon size={16} className="text-green-500" />
-                <span className="text-xs text-green-600">
-                  API keys configured
-                </span>
-              </>
-            ) : (
-              <>
-                <XCircleIcon size={16} className="text-red-500" />
-                <span className="text-xs text-red-600">API keys missing</span>
-              </>
-            )
-          ) : (
-            <span className="text-xs text-green-600">Using .env API keys</span>
-          )}
-        </button>
-
         {/* Model Selector with Dropdown */}
         <div className="relative">
           <button
