@@ -346,7 +346,7 @@ export function Chat({
                     className="text-base md:text-2xl font-semibold bg-clip-text text-transparent 
                       bg-gradient-to-r from-primary via-primary/90 to-primary/80"
                   >
-                    Open Deep Research
+                    AI Tutor Deep Research
                   </motion.h2>
 
                   <motion.p
@@ -355,12 +355,11 @@ export function Chat({
                     transition={{ delay: 0.3 }}
                     className="text-xs md:text-base text-muted-foreground/80 max-w-[340px] mx-auto leading-relaxed"
                   >
-                    An open source alternative to OpenAI and Gemini's deep
-                    research capabilities. Ask any question to generate a
+                    Ask any question to generate a
                     comprehensive report.
                   </motion.p>
 
-                  <motion.div
+                  {/* <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: 0.4 }}
@@ -379,7 +378,7 @@ export function Chat({
                       <GithubIcon className="w-4 h-4 mr-1" />
                       View source code
                     </a>
-                  </motion.div>
+                  </motion.div> */}
                 </div>
               </motion.div>
             </div>
