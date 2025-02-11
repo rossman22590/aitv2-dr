@@ -2,9 +2,9 @@ import FirecrawlApp, { SearchResponse, ExtractResponse, ErrorResponse } from '@m
 import { generateObject } from 'ai';
 import { compact } from 'lodash-es';
 import { z } from 'zod';
-import { setTimeout } from 'timers/promises'; // For delay between requests
+import { setTimeout } from 'timers/promises';
 
-import { createModel, trimPrompt } from './ai/providers';
+import { createModel, trimPrompt, AIModel } from './ai/providers';
 import { systemPrompt } from './prompt';
 import { generateFeedback } from './feedback';
 
@@ -233,9 +233,11 @@ async function processBatchWithRetry(
   extractionPrompt: string,
   onProgress?: (update: string) => Promise<void>,
   maxRetries: number = 3,
-  delayMs: number = 1000
+  initialDelayMs: number = 1000
 ): Promise<ExtractResponse<any>> {
   let retries = 0;
+  let delayMs = initialDelayMs;
+  
   while (retries < maxRetries) {
     try {
       const result = await firecrawl.extract(batch, {
@@ -250,11 +252,18 @@ async function processBatchWithRetry(
     } catch (error: unknown) {
       retries++;
       
-      if (error instanceof Error && 'statusCode' in error && typeof error.statusCode === 'number' && error.statusCode === 429) {
-        const backoffDelay = delayMs * Math.pow(2, retries);
-        await logProgress(`Rate limited. Waiting ${backoffDelay}ms before retry...`, onProgress);
-        await delay(backoffDelay);
-        continue;
+      if (error instanceof Error && 'statusCode' in error && typeof error.statusCode === 'number') {
+        if (error.statusCode === 429) {
+          await logProgress(`Rate limited. Waiting ${delayMs}ms before retry...`, onProgress);
+          await delay(delayMs);
+          delayMs *= 2; // Exponential backoff
+          continue;
+        } else if (error.statusCode >= 500) {
+          await logProgress(`Server error. Waiting ${delayMs}ms before retry...`, onProgress);
+          await delay(delayMs);
+          delayMs *= 2; // Exponential backoff
+          continue;
+        }
       }
       
       if (retries === maxRetries) {
@@ -262,6 +271,7 @@ async function processBatchWithRetry(
       }
       
       await delay(delayMs);
+      delayMs *= 2; // Exponential backoff for other errors too
     }
   }
   throw new Error(`Failed after ${maxRetries} retries`);
@@ -311,7 +321,7 @@ export async function deepResearch({
                 await logProgress(`Processing query: ${serpQuery}`, onProgress);
 
                 const searchResults = await firecrawl.search(serpQuery, {
-                    timeout: 15000,
+                    timeout: 30000, // Increased timeout
                     limit: 5,
                     scrapeOptions: { formats: ['markdown'] },
                 });
@@ -336,18 +346,22 @@ export async function deepResearch({
                     learnings = [...learnings, ...newLearnings.learnings];
                 }
 
-                // Add a delay between queries to respect rate limits
-                await delay(2000);
+                await delay(3000); // Increased delay between queries
 
             } catch (e) {
                 console.error(`Error running query: ${serpQuery}: `, e);
                 await logProgress(`Error running "${serpQuery}": ${e instanceof Error ? e.message : String(e)}`, onProgress);
                 
-                // If we hit a rate limit, wait for a longer time
-                if (e instanceof Error && 'statusCode' in e && e.statusCode === 429) {
-                    const waitTime = 60000; // Wait for 1 minute
-                    await logProgress(`Rate limit hit. Waiting for ${waitTime / 1000} seconds...`, onProgress);
-                    await delay(waitTime);
+                if (e instanceof Error && 'statusCode' in e && typeof e.statusCode === 'number') {
+                    if (e.statusCode === 429) {
+                        const waitTime = 120000; // Wait for 2 minutes
+                        await logProgress(`Rate limit hit. Waiting for ${waitTime / 1000} seconds...`, onProgress);
+                        await delay(waitTime);
+                    } else if (e.statusCode >= 500) {
+                        const waitTime = 60000; // Wait for 1 minute
+                        await logProgress(`Server error. Waiting for ${waitTime / 1000} seconds...`, onProgress);
+                        await delay(waitTime);
+                    }
                 }
             }
         }
@@ -357,8 +371,7 @@ export async function deepResearch({
             currentQuery = await generateNextLevelQuery(learnings, model);
             await logProgress(`Generated query for depth ${currentDepth + 1}: ${currentQuery}`, onProgress);
             
-            // Add a delay between depth levels
-            await delay(30000); // 30 seconds
+            await delay(60000); // 1 minute delay between depth levels
         }
     }
 
@@ -389,7 +402,7 @@ export async function deepResearch({
                       batch,
                       extractionPrompt,
                       onProgress,
-                      3,
+                      5, // Increased max retries
                       2000
                     );
 
@@ -402,13 +415,12 @@ export async function deepResearch({
                         );
                     }
 
-                    // Add a delay between batches
                     if (i < urlBatches.length - 1) {
                         await logProgress(
                           `Waiting before processing next batch...`,
                           onProgress
                         );
-                        await delay(2000);
+                        await delay(5000); // Increased delay between batches
                     }
 
                 } catch (error: unknown) {
@@ -438,6 +450,7 @@ export async function deepResearch({
         visitedUrls: combinedVisitedUrls,
     };
 }
+
 
 
 // import FirecrawlApp, { SearchResponse } from '@mendable/firecrawl-js';
