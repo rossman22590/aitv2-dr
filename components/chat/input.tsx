@@ -177,7 +177,7 @@ export function MultimodalInput({
           <Slider
             value={[depth]}
             min={1}
-            max={5}
+            max={4}
             step={1}
             className="w-20"
             onValueChange={([value]) => setDepth(value)}
@@ -269,7 +269,7 @@ export function MultimodalInput({
             <Slider
               value={[depth]}
               min={1}
-              max={5}
+              max={4}
               step={1}
               className="w-24"
               onValueChange={([value]) => setDepth(value)}
