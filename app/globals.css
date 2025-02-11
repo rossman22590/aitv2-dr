@@ -4,7 +4,7 @@
 @tailwind components;
 @tailwind utilities;
 
-@keyframes textGradient {
+/* @keyframes textGradient {
   0% {
     background-position: 0% 50%;
   }
@@ -28,7 +28,7 @@
   -webkit-background-clip: text;
   background-clip: text;
   animation: textGradient 3s ease infinite;
-}
+} */
 
 
 /* Hide scroll bar */

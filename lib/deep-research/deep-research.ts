@@ -1,12 +1,12 @@
 // lib/deep-research/index.ts
-import FirecrawlApp, { SearchResponse, ExtractResponse, ErrorResponse } from '@mendable/firecrawl-js';
+import FirecrawlApp, { SearchResponse, ExtractResponse, ErrorResponse, ExtractParams } from '@mendable/firecrawl-js';
 import { generateObject } from 'ai';
 import { compact } from 'lodash-es';
 import { z } from 'zod';
 
 import { createModel, trimPrompt } from './ai/providers';
 import { systemPrompt } from './prompt';
-import { generateFeedback } from './feedback'; // Import generateFeedback
+import { generateFeedback } from './feedback';
 
 type ResearchResult = {
   learnings: string[];
@@ -24,36 +24,28 @@ type DeepResearchOptions = {
   firecrawlKey?: string;
 };
 
-// Update the firecrawl initialization to use the provided key
 const getFirecrawl = (apiKey?: string) =>
   new FirecrawlApp({
     apiKey: apiKey ?? process.env.FIRECRAWL_KEY ?? '',
     apiUrl: process.env.FIRECRAWL_BASE_URL,
   });
 
-// Helper function to format progress messages consistently
 const formatProgress = {
   generating: (count: number, query: string) =>
     `Generating up to ${count} SERP queries\n${query}`,
-
   created: (count: number, queries: string) =>
     `Created ${count} SERP queries\n${queries}`,
-
   researching: (query: string) => `Researching\n${query}`,
-
   found: (count: number, query: string) => `Found ${count} results\n${query}`,
-
   ran: (query: string, count: number) =>
     `Ran "${query}"\n${count} content items found`,
-
   generated: (count: number, query: string) =>
     `Generated ${count} learnings\n${query}`,
   extracting: (urls: string[]) => `Extracting data from ${urls.length} URLs`,
-  extracted: () => `Firecrawl extraction completed`,
-  extractError: (error: any) => `Firecrawl extraction error: ${error}`,
+  extracted: () => `AI Tutor extraction completed`,
+  extractError: (error: any) => `AI Tutor extraction error: ${error}`,
 };
 
-// Helper function to log and stream messages
 async function logProgress(
   message: string,
   onProgress?: (update: string) => Promise<void>,
@@ -63,7 +55,6 @@ async function logProgress(
   }
 }
 
-// take en user query, return a list of SERP queries
 async function generateSerpQueries({
   query,
   numQueries = 3,
@@ -73,8 +64,6 @@ async function generateSerpQueries({
 }: {
   query: string;
   numQueries?: number;
-
-  // optional, if provided, the research will continue from the last learning
   learnings?: string[];
   onProgress?: (update: string) => Promise<void>;
   model: ReturnType<typeof createModel>;
@@ -193,31 +182,24 @@ export async function writeFinalReport({
     }),
   });
 
-  // Append the visited URLs as a markdown formatted Sources section
   const urlsSection = `\n\n## Sources\n\n${visitedUrls
     .map(url => `- ${url}`)
     .join('\n')}`;
 
-  // Prepend a primary markdown heading to make sure the UI renders it as markdown
   return `# Research Report\n\n${res.object.reportMarkdown}${urlsSection}`;
 }
 
-// Generate extraction prompt
 async function generateExtractionPrompt(query: string, feedbackQuestions: string[]): Promise<string> {
-    //  This is a basic example.  We can refine this prompt later.
     const feedbackString = feedbackQuestions.length > 0
         ? `Here are some feedback questions to consider: ${feedbackQuestions.join(', ')}`
         : '';
     return `Extract key information related to the following query: "${query}". ${feedbackString} Focus on extracting facts, figures, and relevant details. Return the extracted data as a JSON object with a "summary" field.`;
 }
 
-// NEW: Merge learnings (updated to handle multiple extractions)
 function mergeLearnings(originalLearnings: string[], firecrawlData: any): string[] {
     if (firecrawlData && typeof firecrawlData === 'object' && firecrawlData.summary) {
-        // Handle single extraction result
         return [...originalLearnings, `Firecrawl Extraction Summary: ${firecrawlData.summary}`];
     } else if (Array.isArray(firecrawlData)) {
-        // Handle multiple extraction results (array of results)
         let newLearnings = [...originalLearnings];
         for (const result of firecrawlData) {
             if (result && typeof result === 'object' && result.summary) {
@@ -229,13 +211,11 @@ function mergeLearnings(originalLearnings: string[], firecrawlData: any): string
     return originalLearnings;
 }
 
-// Type guard function for ExtractResponse
 function isExtractResponse(response: any): response is ExtractResponse<any> {
     return response && typeof response === 'object' && 'data' in response;
 }
 
-// NEW: Batch URLs into groups of 10 or fewer
-function batchURLs(urls: string[], batchSize: number = 10): string[][] {
+function batchURLs(urls: string[], batchSize: number = 9): string[][] {
   const batches = [];
   for (let i = 0; i < urls.length; i += batchSize) {
     batches.push(urls.slice(i, i + batchSize));
@@ -256,7 +236,6 @@ export async function deepResearch({
     const firecrawl = getFirecrawl(firecrawlKey);
     const results: ResearchResult[] = [];
 
-    // Generate SERP queries
     const serpQueries = await generateSerpQueries({
         query,
         learnings,
@@ -265,7 +244,6 @@ export async function deepResearch({
         model,
     });
 
-    // Process each SERP query
     for (const serpQuery of serpQueries) {
         try {
             const searchResults = await firecrawl.search(serpQuery, {
@@ -301,49 +279,43 @@ export async function deepResearch({
         }
     }
 
-    // Combine learnings and visited URLs from all SERP queries
     let combinedLearnings = Array.from(new Set(results.flatMap(r => r.learnings)));
     let combinedVisitedUrls = Array.from(new Set(results.flatMap(r => r.visitedUrls)));
 
-
-    // --- Firecrawl Extraction ---
-    // We use the /extract endpoint here to get more structured data from the URLs
-    // that were found during the initial SERP search. This augments the initial
-    // learnings with more detailed information.
     if (combinedVisitedUrls.length > 0) {
         try {
-            // Batch the URLs
             const urlBatches = batchURLs(combinedVisitedUrls);
             await logProgress(formatProgress.extracting(combinedVisitedUrls), onProgress);
 
-            // Generate feedback questions (once, for the whole query)
-            const feedbackQuestions = await generateFeedback({ query }); //No model id, so use default.
+            const feedbackQuestions = await generateFeedback({ query });
             const extractionPrompt = await generateExtractionPrompt(query, feedbackQuestions);
 
-            // Store all extraction results
-            const extractionResults = [];
+            for (let i = 0; i < urlBatches.length; i++) {
+                const batch = urlBatches[i];
+                try {
+                    await logProgress(`Processing batch ${i + 1} of ${urlBatches.length} (${batch.length} URLs)`, onProgress);
+                    
+                    const firecrawlResult = await firecrawl.extract(batch, {
+                        prompt: extractionPrompt,
+                    });
 
-            // Iterate over the batches and call /extract for each batch
-            for (const batch of urlBatches) {
-                const firecrawlResult = await firecrawl.extract(batch, {
-                    prompt: extractionPrompt,
-                    // enableWebSearch: false, // You can add this as an option later
-                });
+                    if (isExtractResponse(firecrawlResult)) {
+                        combinedLearnings = mergeLearnings(combinedLearnings, firecrawlResult.data);
+                        await logProgress(`Processed batch ${i + 1}: ${batch.length} URLs`, onProgress);
+                    } else {
+                        console.error("Firecrawl extraction failed for batch:", firecrawlResult);
+                        await logProgress(formatProgress.extractError(firecrawlResult), onProgress);
+                    }
 
-
-                if (isExtractResponse(firecrawlResult)) {
-                    extractionResults.push(firecrawlResult.data);
-                } else {
-                    console.error("Firecrawl extraction failed for batch:", firecrawlResult);
-                    await logProgress(formatProgress.extractError(firecrawlResult), onProgress);
+                    if (i < urlBatches.length - 1) {
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                } catch (error) {
+                    console.error(`Error processing batch ${i + 1}:`, error);
+                    await logProgress(formatProgress.extractError(error), onProgress);
                 }
             }
             await logProgress(formatProgress.extracted(), onProgress);
-
-            // Merge all extraction results with the original learnings
-            combinedLearnings = mergeLearnings(combinedLearnings, extractionResults);
-
-
         } catch (error) {
             console.error("Firecrawl extraction error:", error);
             await logProgress(formatProgress.extractError(error), onProgress);
