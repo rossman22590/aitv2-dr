@@ -241,65 +241,113 @@ export async function deepResearch({
   const results: ResearchResult[] = [];
 
   try {
-      console.log('Generating SERP queries...');
-      const serpQueries = await generateSerpQueries({
-          query,
-          learnings,
-          numQueries: breadth,
-          onProgress,
-          model,
-      });
-      console.log(`Generated ${serpQueries.length} SERP queries`);
+    console.log('Generating SERP queries...');
+    const serpQueries = await generateSerpQueries({
+      query,
+      learnings,
+      numQueries: breadth,
+      onProgress,
+      model,
+    });
+    console.log(`Generated ${serpQueries.length} SERP queries`);
 
-      for (const serpQuery of serpQueries) {
-          try {
-              console.log(`Processing SERP query: ${serpQuery}`);
-              const searchResults = await firecrawl.search(serpQuery, {
-                  timeout: 15000,
-                  limit: 5,
-                  scrapeOptions: { formats: ['markdown'] },
-              });
+    for (const serpQuery of serpQueries) {
+      try {
+        console.log(`Processing SERP query: ${serpQuery}`);
+        const searchResults = await firecrawl.search(serpQuery, {
+          timeout: 15000,
+          limit: 5,
+          scrapeOptions: { formats: ['markdown'] },
+        });
 
-              if (searchResults.data.length > 0) {
-                  console.log(`Found ${searchResults.data.length} results for query: ${serpQuery}`);
-                  const newLearnings = await processSerpResult({
-                      query: serpQuery,
-                      result: searchResults,
-                      numLearnings: Math.ceil(breadth / 2),
-                      numFollowUpQuestions: Math.ceil(breadth / 2),
-                      onProgress,
-                      model,
-                  });
+        if (searchResults.data.length > 0) {
+          console.log(`Found ${searchResults.data.length} results for query: ${serpQuery}`);
+          const newLearnings = await processSerpResult({
+            query: serpQuery,
+            result: searchResults,
+            numLearnings: Math.ceil(breadth / 2),
+            numFollowUpQuestions: Math.ceil(breadth / 2),
+            onProgress,
+            model,
+          });
 
-                  results.push({
-                      learnings: newLearnings.learnings,
-                      visitedUrls: searchResults.data
-                          .map(r => r.url)
-                          .filter((url): url is string => url != null),
-                  });
-              } else {
-                  console.log(`No results found for query: ${serpQuery}`);
-              }
-          } catch (e) {
-              console.error(`Error running query: ${serpQuery}: `, e);
-              await logProgress(`Error running "${serpQuery}": ${e}`, onProgress);
-          }
+          results.push({
+            learnings: newLearnings.learnings,
+            visitedUrls: searchResults.data
+              .map(r => r.url)
+              .filter((url): url is string => url != null),
+          });
+        } else {
+          console.log(`No results found for query: ${serpQuery}`);
+        }
+      } catch (e) {
+        console.error(`Error running query: ${serpQuery}: `, e);
+        await logProgress(`Error running "${serpQuery}": ${e}`, onProgress);
       }
+    }
 
-      // ... rest of the function ...
+    let combinedLearnings = Array.from(new Set(results.flatMap(r => r.learnings)));
+    let combinedVisitedUrls = Array.from(new Set(results.flatMap(r => r.visitedUrls)));
+
+    if (combinedVisitedUrls.length > 0) {
+      try {
+        const urlBatches = batchURLs(combinedVisitedUrls, 9);
+        await logProgress(formatProgress.extracting(combinedVisitedUrls), onProgress);
+
+        const feedbackQuestions = await generateFeedback({ query });
+        const extractionPrompt = await generateExtractionPrompt(query, feedbackQuestions);
+
+        for (let i = 0; i < urlBatches.length; i++) {
+          const batch = urlBatches[i];
+          try {
+            console.log(`Processing extraction batch ${i + 1} of ${urlBatches.length} (${batch.length} URLs)`);
+            await logProgress(`Processing extraction batch ${i + 1} of ${urlBatches.length} (${batch.length} URLs)`, onProgress);
+            
+            const firecrawlResult = await firecrawl.extract(batch, {
+              prompt: extractionPrompt,
+            });
+
+            if (isExtractResponse(firecrawlResult)) {
+              combinedLearnings = mergeLearnings(combinedLearnings, firecrawlResult.data);
+              console.log(`Processed extraction batch ${i + 1}: ${batch.length} URLs`);
+              await logProgress(`Processed extraction batch ${i + 1}: ${batch.length} URLs`, onProgress);
+            } else {
+              console.error("Firecrawl extraction failed for batch:", firecrawlResult);
+              await logProgress(formatProgress.extractError(firecrawlResult), onProgress);
+            }
+
+            if (i < urlBatches.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay between batches
+            }
+          } catch (error) {
+            console.error(`Error processing extraction batch ${i + 1}:`, error);
+            await logProgress(formatProgress.extractError(error), onProgress);
+          }
+        }
+        console.log("Extraction completed");
+        await logProgress(formatProgress.extracted(), onProgress);
+      } catch (error) {
+        console.error("Firecrawl extraction error:", error);
+        await logProgress(formatProgress.extractError(error), onProgress);
+      }
+    }
+
+    console.log(`Completed deepResearch. Learnings: ${combinedLearnings.length}, URLs: ${combinedVisitedUrls.length}`);
+    console.log(`Final memory usage: ${process.memoryUsage().heapUsed / 1024 / 1024} MB`);
+
+    return {
+      learnings: combinedLearnings,
+      visitedUrls: combinedVisitedUrls,
+    };
 
   } catch (error) {
-      console.error("Unexpected error in deepResearch:", error);
-      await logProgress(`Unexpected error in research: ${error}`, onProgress);
-  }
-
-  console.log(`Completed deepResearch. Learnings: ${results.flatMap(r => r.learnings).length}, URLs: ${results.flatMap(r => r.visitedUrls).length}`);
-  console.log(`Final memory usage: ${process.memoryUsage().heapUsed / 1024 / 1024} MB`);
-
-  return {
+    console.error("Unexpected error in deepResearch:", error);
+    await logProgress(`Unexpected error in research: ${error}`, onProgress);
+    return {
       learnings: results.flatMap(r => r.learnings),
       visitedUrls: results.flatMap(r => r.visitedUrls),
-  };
+    };
+  }
 }
 
 
