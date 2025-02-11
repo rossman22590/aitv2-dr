@@ -4,6 +4,33 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes textGradient {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.in-progress-text {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(128, 128, 128, 1) 50%,
+    rgba(0, 0, 0, 1) 100%
+  );
+  background-size: 200% auto;
+  color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: textGradient 3s ease infinite;
+}
+
+
 /* Hide scroll bar */
 @layer utilities {
   /* Hide scrollbar for Chrome, Safari and Opera */

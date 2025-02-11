@@ -1,12 +1,12 @@
-// lib/deep-research/index.ts
 import FirecrawlApp, { SearchResponse, ExtractResponse, ErrorResponse } from '@mendable/firecrawl-js';
 import { generateObject } from 'ai';
 import { compact } from 'lodash-es';
 import { z } from 'zod';
+import { setTimeout } from 'timers/promises'; // For delay between requests
 
 import { createModel, trimPrompt } from './ai/providers';
 import { systemPrompt } from './prompt';
-import { generateFeedback } from './feedback'; // Import generateFeedback
+import { generateFeedback } from './feedback';
 
 type ResearchResult = {
   learnings: string[];
@@ -24,36 +24,28 @@ type DeepResearchOptions = {
   firecrawlKey?: string;
 };
 
-// Update the firecrawl initialization to use the provided key
 const getFirecrawl = (apiKey?: string) =>
   new FirecrawlApp({
     apiKey: apiKey ?? process.env.FIRECRAWL_KEY ?? '',
     apiUrl: process.env.FIRECRAWL_BASE_URL,
   });
 
-// Helper function to format progress messages consistently
 const formatProgress = {
   generating: (count: number, query: string) =>
     `Generating up to ${count} SERP queries\n${query}`,
-
   created: (count: number, queries: string) =>
     `Created ${count} SERP queries\n${queries}`,
-
   researching: (query: string) => `Researching\n${query}`,
-
   found: (count: number, query: string) => `Found ${count} results\n${query}`,
-
   ran: (query: string, count: number) =>
     `Ran "${query}"\n${count} content items found`,
-
   generated: (count: number, query: string) =>
     `Generated ${count} learnings\n${query}`,
   extracting: (urls: string[]) => `Extracting data from ${urls.length} URLs`,
-  extracted: () => `Firecrawl extraction completed`,
-  extractError: (error: any) => `Firecrawl extraction error: ${error}`,
+  extracted: () => `AI Tutor research extraction completed`,
+  extractError: (error: unknown) => `AI Tutor extraction error: ${error instanceof Error ? error.message : String(error)}`,
 };
 
-// Helper function to log and stream messages
 async function logProgress(
   message: string,
   onProgress?: (update: string) => Promise<void>,
@@ -63,7 +55,6 @@ async function logProgress(
   }
 }
 
-// take en user query, return a list of SERP queries
 async function generateSerpQueries({
   query,
   numQueries = 3,
@@ -73,8 +64,6 @@ async function generateSerpQueries({
 }: {
   query: string;
   numQueries?: number;
-
-  // optional, if provided, the research will continue from the last learning
   learnings?: string[];
   onProgress?: (update: string) => Promise<void>;
   model: ReturnType<typeof createModel>;
@@ -193,31 +182,24 @@ export async function writeFinalReport({
     }),
   });
 
-  // Append the visited URLs as a markdown formatted Sources section
   const urlsSection = `\n\n## Sources\n\n${visitedUrls
     .map(url => `- ${url}`)
     .join('\n')}`;
 
-  // Prepend a primary markdown heading to make sure the UI renders it as markdown
   return `# Research Report\n\n${res.object.reportMarkdown}${urlsSection}`;
 }
 
-// Generate extraction prompt
 async function generateExtractionPrompt(query: string, feedbackQuestions: string[]): Promise<string> {
-    //  This is a basic example.  We can refine this prompt later.
     const feedbackString = feedbackQuestions.length > 0
         ? `Here are some feedback questions to consider: ${feedbackQuestions.join(', ')}`
         : '';
     return `Extract key information related to the following query: "${query}". ${feedbackString} Focus on extracting facts, figures, and relevant details. Return the extracted data as a JSON object with a "summary" field.`;
 }
 
-// NEW: Merge learnings (updated to handle multiple extractions)
 function mergeLearnings(originalLearnings: string[], firecrawlData: any): string[] {
     if (firecrawlData && typeof firecrawlData === 'object' && firecrawlData.summary) {
-        // Handle single extraction result
         return [...originalLearnings, `Firecrawl Extraction Summary: ${firecrawlData.summary}`];
     } else if (Array.isArray(firecrawlData)) {
-        // Handle multiple extraction results (array of results)
         let newLearnings = [...originalLearnings];
         for (const result of firecrawlData) {
             if (result && typeof result === 'object' && result.summary) {
@@ -229,18 +211,73 @@ function mergeLearnings(originalLearnings: string[], firecrawlData: any): string
     return originalLearnings;
 }
 
-// Type guard function for ExtractResponse
 function isExtractResponse(response: any): response is ExtractResponse<any> {
     return response && typeof response === 'object' && 'data' in response;
 }
 
-// NEW: Batch URLs into groups of 10 or fewer
-function batchURLs(urls: string[], batchSize: number = 10): string[][] {
+function batchURLs(urls: string[], batchSize: number = 5): string[][] {
   const batches = [];
   for (let i = 0; i < urls.length; i += batchSize) {
     batches.push(urls.slice(i, i + batchSize));
   }
   return batches;
+}
+
+async function delay(ms: number = 1000) {
+  await setTimeout(ms);
+}
+
+async function processBatchWithRetry(
+  firecrawl: FirecrawlApp,
+  batch: string[],
+  extractionPrompt: string,
+  onProgress?: (update: string) => Promise<void>,
+  maxRetries: number = 3,
+  delayMs: number = 1000
+): Promise<ExtractResponse<any>> {
+  let retries = 0;
+  while (retries < maxRetries) {
+    try {
+      const result = await firecrawl.extract(batch, {
+        prompt: extractionPrompt,
+      });
+      
+      if (isExtractResponse(result)) {
+        return result;
+      } else {
+        throw new Error("Invalid response format");
+      }
+    } catch (error: unknown) {
+      retries++;
+      
+      if (error instanceof Error && 'statusCode' in error && typeof error.statusCode === 'number' && error.statusCode === 429) {
+        const backoffDelay = delayMs * Math.pow(2, retries);
+        await logProgress(`Rate limited. Waiting ${backoffDelay}ms before retry...`, onProgress);
+        await delay(backoffDelay);
+        continue;
+      }
+      
+      if (retries === maxRetries) {
+        throw error;
+      }
+      
+      await delay(delayMs);
+    }
+  }
+  throw new Error(`Failed after ${maxRetries} retries`);
+}
+
+async function generateNextLevelQuery(learnings: string[], model: ReturnType<typeof createModel>): Promise<string> {
+    const res = await generateObject({
+        model,
+        system: systemPrompt(),
+        prompt: `Based on the following learnings, generate a new, more focused query to dive deeper into the most interesting or important aspects:\n\n${learnings.join('\n')}`,
+        schema: z.object({
+            query: z.string().describe('A new, more focused query based on the learnings'),
+        }),
+    });
+
+    return res.object.query;
 }
 
 export async function deepResearch({
@@ -254,97 +291,143 @@ export async function deepResearch({
     firecrawlKey,
 }: DeepResearchOptions): Promise<ResearchResult> {
     const firecrawl = getFirecrawl(firecrawlKey);
-    const results: ResearchResult[] = [];
+    let results: ResearchResult[] = [];
+    let currentDepth = 0;
+    let currentQuery = query;
 
-    // Generate SERP queries
-    const serpQueries = await generateSerpQueries({
-        query,
-        learnings,
-        numQueries: breadth,
-        onProgress,
-        model,
-    });
+    while (currentDepth < depth) {
+        await logProgress(`Starting depth level ${currentDepth + 1}`, onProgress);
 
-    // Process each SERP query
-    for (const serpQuery of serpQueries) {
-        try {
-            const searchResults = await firecrawl.search(serpQuery, {
-                timeout: 15000,
-                limit: 5,
-                scrapeOptions: { formats: ['markdown'] },
-            });
+        const serpQueries = await generateSerpQueries({
+            query: currentQuery,
+            learnings,
+            numQueries: breadth,
+            onProgress,
+            model,
+        });
 
-            if (searchResults.data.length > 0) {
-                const newLearnings = await processSerpResult({
-                    query: serpQuery,
-                    result: searchResults,
-                    numLearnings: Math.ceil(breadth / 2),
-                    numFollowUpQuestions: Math.ceil(breadth / 2),
-                    onProgress,
-                    model,
+        for (const serpQuery of serpQueries) {
+            try {
+                await logProgress(`Processing query: ${serpQuery}`, onProgress);
+
+                const searchResults = await firecrawl.search(serpQuery, {
+                    timeout: 15000,
+                    limit: 5,
+                    scrapeOptions: { formats: ['markdown'] },
                 });
 
-                results.push({
-                    learnings: newLearnings.learnings,
-                    visitedUrls: searchResults.data
-                        .map(r => r.url)
-                        .filter((url): url is string => url != null),
-                });
+                if (searchResults.data.length > 0) {
+                    const newLearnings = await processSerpResult({
+                        query: serpQuery,
+                        result: searchResults,
+                        numLearnings: Math.ceil(breadth / 2),
+                        numFollowUpQuestions: Math.ceil(breadth / 2),
+                        onProgress,
+                        model,
+                    });
+
+                    results.push({
+                        learnings: newLearnings.learnings,
+                        visitedUrls: searchResults.data
+                            .map(r => r.url)
+                            .filter((url): url is string => url != null),
+                    });
+
+                    learnings = [...learnings, ...newLearnings.learnings];
+                }
+
+                // Add a delay between queries to respect rate limits
+                await delay(2000);
+
+            } catch (e) {
+                console.error(`Error running query: ${serpQuery}: `, e);
+                await logProgress(`Error running "${serpQuery}": ${e instanceof Error ? e.message : String(e)}`, onProgress);
+                
+                // If we hit a rate limit, wait for a longer time
+                if (e instanceof Error && 'statusCode' in e && e.statusCode === 429) {
+                    const waitTime = 60000; // Wait for 1 minute
+                    await logProgress(`Rate limit hit. Waiting for ${waitTime / 1000} seconds...`, onProgress);
+                    await delay(waitTime);
+                }
             }
-        } catch (e) {
-            console.error(`Error running query: ${serpQuery}: `, e);
-            await logProgress(`Error running "${serpQuery}": ${e}`, onProgress);
-            results.push({
-                learnings: [],
-                visitedUrls: [],
-            });
+        }
+
+        currentDepth++;
+        if (currentDepth < depth) {
+            currentQuery = await generateNextLevelQuery(learnings, model);
+            await logProgress(`Generated query for depth ${currentDepth + 1}: ${currentQuery}`, onProgress);
+            
+            // Add a delay between depth levels
+            await delay(30000); // 30 seconds
         }
     }
 
-    // Combine learnings and visited URLs from all SERP queries
     let combinedLearnings = Array.from(new Set(results.flatMap(r => r.learnings)));
     let combinedVisitedUrls = Array.from(new Set(results.flatMap(r => r.visitedUrls)));
 
-
-    // --- Firecrawl Extraction ---
-    // We use the /extract endpoint here to get more structured data from the URLs
-    // that were found during the initial SERP search. This augments the initial
-    // learnings with more detailed information.
     if (combinedVisitedUrls.length > 0) {
         try {
-            // Batch the URLs
-            const urlBatches = batchURLs(combinedVisitedUrls);
+            const urlBatches = batchURLs(combinedVisitedUrls, 5);
             await logProgress(formatProgress.extracting(combinedVisitedUrls), onProgress);
 
-            // Generate feedback questions (once, for the whole query)
-            const feedbackQuestions = await generateFeedback({ query }); //No model id, so use default.
+            const feedbackQuestions = await generateFeedback({ query });
             const extractionPrompt = await generateExtractionPrompt(query, feedbackQuestions);
 
-            // Store all extraction results
             const extractionResults = [];
 
-            // Iterate over the batches and call /extract for each batch
-            for (const batch of urlBatches) {
-                const firecrawlResult = await firecrawl.extract(batch, {
-                    prompt: extractionPrompt,
-                    // enableWebSearch: false, // You can add this as an option later
-                });
+            for (let i = 0; i < urlBatches.length; i++) {
+                const batch = urlBatches[i];
+                
+                try {
+                    await logProgress(
+                      `Processing batch ${i + 1}/${urlBatches.length} (${batch.length} URLs)`,
+                      onProgress
+                    );
 
+                    const result = await processBatchWithRetry(
+                      firecrawl,
+                      batch,
+                      extractionPrompt,
+                      onProgress,
+                      3,
+                      2000
+                    );
 
-                if (isExtractResponse(firecrawlResult)) {
-                    extractionResults.push(firecrawlResult.data);
-                } else {
-                    console.error("Firecrawl extraction failed for batch:", firecrawlResult);
-                    await logProgress(formatProgress.extractError(firecrawlResult), onProgress);
+                    if (isExtractResponse(result)) {
+                        extractionResults.push(result.data);
+                        
+                        await logProgress(
+                          `Successfully processed batch ${i + 1}/${urlBatches.length}`,
+                          onProgress
+                        );
+                    }
+
+                    // Add a delay between batches
+                    if (i < urlBatches.length - 1) {
+                        await logProgress(
+                          `Waiting before processing next batch...`,
+                          onProgress
+                        );
+                        await delay(2000);
+                    }
+
+                } catch (error: unknown) {
+                    console.error(`Error processing batch ${i + 1}:`, error);
+                    await logProgress(
+                      `Error processing batch ${i + 1}: ${error instanceof Error ? error.message : String(error)}`,
+                      onProgress
+                    );
+                    continue;
                 }
             }
+
             await logProgress(formatProgress.extracted(), onProgress);
 
-            // Merge all extraction results with the original learnings
-            combinedLearnings = mergeLearnings(combinedLearnings, extractionResults);
+            if (extractionResults.length > 0) {
+                combinedLearnings = mergeLearnings(combinedLearnings, extractionResults);
+            }
 
-
-        } catch (error) {
+        } catch (error: unknown) {
             console.error("Firecrawl extraction error:", error);
             await logProgress(formatProgress.extractError(error), onProgress);
         }
